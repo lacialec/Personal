@@ -1,4 +1,4 @@
-SUBSCRIPTION_ID=$(az account show --query id -o tsv) # here enter your subscription id
+SUBSCRIPTION_ID=932300b0-eebe-4c3f-8086-0c8215b99b05 # here enter your subscription id
 KUBE_GROUP="kubes_fw_knet" # here enter the resources group name of your AKS cluster
 KUBE_NAME="dzkubekube" # here enter the name of your kubernetes resource
 LOCATION="westeurope" # here enter the datacenter location
