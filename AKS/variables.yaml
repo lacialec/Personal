@@ -1,0 +1,13 @@
+SUBSCRIPTION_ID=$(az account show --query id -o tsv) # here enter your subscription id
+KUBE_GROUP="kubes_fw_knet" # here enter the resources group name of your AKS cluster
+KUBE_NAME="dzkubekube" # here enter the name of your kubernetes resource
+LOCATION="westeurope" # here enter the datacenter location
+KUBE_VNET_NAME="knets" # here enter the name of your vnet
+KUBE_FW_SUBNET_NAME="AzureFirewallSubnet" # this you cannot change
+APPGW_SUBNET_NAME="gw-1-subnet"
+KUBE_ING_SUBNET_NAME="ing-4-subnet" # here enter the name of your ingress subnet
+KUBE_AGENT_SUBNET_NAME="aks-5-subnet" # here enter the name of your AKS subnet
+FW_NAME="dzkubenetfw" # here enter the name of your azure firewall resource
+APPGW_NAME="dzkubeappgw"
+KUBE_VERSION="$(az aks get-versions -l $LOCATION --query 'orchestrators[?default == `true`].orchestratorVersion' -o tsv)"
+KUBE_CNI_PLUGIN="azure" # alternative "kubenet"
