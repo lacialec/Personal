@@ -69,3 +69,69 @@ az monitor log-analytics workspace create --resource-group $KUBE_GROUP --workspa
 WORKSPACE_ID=$(az monitor log-analytics workspace show --resource-group $KUBE_GROUP --workspace-name $KUBE_NAME -o json | jq '.id' -r)
 az aks enable-addons --resource-group $KUBE_GROUP --name $KUBE_NAME --addons monitoring --workspace-resource-id $WORKSPACE_ID
 
+#Currently AKS needs the following outgoing network dependencies (check official docs for updated list):
+
+#These cannot be filtered on a network level and need therefore be configured using application rules.
+
+#*.hcp.<location>.azmk8s.io (eg. *.hcp.westeurope.azmk8s.io) — this is the dns that is running your api server(HTTPS:443, UDP: 1194)
+#mcr.microsoft.com , *.data.mcr.microsoft.com— This is required since some AKS images are coming from the Microsoft Container Registry (HTTPS: 443)
+#management.azure.com— This is where azure management endpoint lives (HTTPS: 443)
+#login.microsoftonline.com — This is required if you are using Azure AD authentication for your AKS cluster (HTTPS: 443)
+#acs-mirror.azureedge.net— This is where azure keeps the cni plugin (HTTPS:443
+
+
+#Optionally you might want to allow the following traffic:
+
+#“download.opensuse.org” “security.ubuntu.com” “packages.microsoft.com” “azure.archive.ubuntu.com” “changelogs.ubuntu.com” “snapcraft.io” “api.snapcraft.io” “motd.ubuntu.com” — This is needed for security patches and updates — if the customer wants them to be applied automatically
+#“*auth.docker.io” “*cloudflare.docker.io” “*cloudflare.docker.com” “*registry-1.docker.io” — In case you want to download images from DockerHub
+
+
+#all outgoing traffic will be filtered and you can check that by launching a pod and see if you can curl the outside internet.
+
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: centos
+spec:
+  containers:
+  - name: centoss
+    image: centos
+    ports:
+    - containerPort: 80
+    command:
+    - sleep
+    - "3600"
+EOF
+
+
+#How to expose a kubernetes service through the azure firewall?
+
+#bewaware If you expose a service through the normal LoadBalancer with a public ip, it will not be accessible because the traffic that has not been routed through the azure firewall
+#will be dropped on the way out. Therefore you need to create your service with a fixed internal ip, internal LoadBalancer and route the traffic through the azure firewall both for outgoing and incoming traffic.
+#If you only want to use internal load balancers, then you do not need to do this.
+
+kubectl run nginx --image=nginx --port=80
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-internal
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    service.beta.kubernetes.io/azure-load-balancer-internal-subnet: "ing-4-subnet"
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 10.0.4.4
+  ports:
+  - port: 80
+  selector:
+    run: nginx
+EOF
+
+
+#we retrieve the internal load balancer ip and register it in the azure firewall as a Dnat rule.
+
+SERVICE_IP=$(kubectl get svc nginx-internal --template="{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}")
+az network firewall nat-rule create  --firewall-name $FW_NAME --collection-name "inboundlbrules" --name "allow inbound load balancers" --protocols "TCP" --source-addresses "*" --resource-group $KUBE_GROUP --action "Dnat"  --destination-addresses $FW_PUBLIC_IP --destination-ports 80 --translated-address $SERVICE_IP --translated-port "80"  --priority 101
+
